@@ -1,16 +1,31 @@
 from .gateway import Gateway
 from .voice_client import VoiceClient
 from .api import DiscordAPI
-import threading
+import logging
+import sys
 
 
 class Bot:
-    def __init__(self, token, self_bot=False):
+    def __init__(self, token, self_bot=False, debug_mode=False):
         if not self_bot:
             token = "Bot " + token
+
+        if (debug_mode):
+            log_level = logging.DEBUG
+        else:
+            log_level = logging.INFO
+        self.log = logging.getLogger(__name__)
+        self.log.setLevel(logging.DEBUG)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(log_level)
+        handler.setFormatter(logging.Formatter('[%(asctime)s] [%(levelname)s] - %(message)s'))
+        self.log.addHandler(handler)
+
         self.discordApi = DiscordAPI(token)
         self.voiceClient = VoiceClient(token, 895726544859852811)
+        self.voiceClient.log = self.log
         self.gateway = Gateway(token, self.discordApi, self.voiceClient)
+        self.gateway.log = self.log
 
     def run_gateway(self):
         self.gateway.run()

@@ -17,7 +17,8 @@ class DiscordAPI:
             "GET": requests.get,
             "PUT": requests.put,
             "POST": requests.post,
-            "PATCH": requests.patch
+            "PATCH": requests.patch,
+            "DELETE": requests.delete
         }
 
     def handle_api_response(self, resp):
@@ -132,3 +133,7 @@ class DiscordAPI:
     async def get_guild_member(self, member_id, guild_id):
         res = await self.run(f"/guilds/{guild_id}/members/{member_id}", "GET")
         return GuildMember(self, guild_id, res)
+
+    async def delete_message(self, message_id, channel_id):
+        res = await self.run(f"/channels/{channel_id}/messages/{message_id}", "DELETE")
+        return res

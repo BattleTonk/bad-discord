@@ -53,6 +53,9 @@ class Message:
         await self.discordApi.create_message(self.channel_id, content=content, reply=self.id, embeds=embeds,
                                              files=files)
 
+    async def delete(self):
+        await self.discordApi.delete_message(self.id, self.channel_id)
+
 
 class ActionRow:
     def __init__(self, components=None):

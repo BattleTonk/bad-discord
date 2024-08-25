@@ -6,9 +6,7 @@ from .message import Message
 from .interaction import Interaction
 from .guild_member import GuildMember
 import time
-import threading
 from .helpful_functions import sane_wait_for
-from threading import Thread
 import logging
 
 
@@ -35,19 +33,13 @@ class Gateway:
         self.session_id = None
         self.discordApi = discordApi
         self.handlers = {}
-        self.voiceClient = voiceClient
         self.catch_events = {}
+        self.voiceClient = voiceClient
         self.voice_connected = None
-        self.loop = None
+
+        self.log:logging.Logger = None
 
     def run(self):
-        ##loop = asyncio.get_event_loop()
-        ##try:
-            ##loop.run_until_complete(self._run_connection())
-        ##except websockets.exceptions.ConnectionClosedError:
-            ##pass
-        ##except websockets.exceptions.ConnectionClosedOK:
-            ##pass
         try:
             asyncio.run(self._run_connection(resume=False))
         except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.ConnectionClosedOK):
@@ -58,22 +50,18 @@ class Gateway:
                     pass
 
     async def _run_connection(self, resume=False):
+        self.log.debug("connecting to the discord gateway(gateway.py:53)")
         self.voice_connected = asyncio.Event()
-        loop = asyncio.get_running_loop()
-        self.loop = loop
-        self.voiceClient.loop = loop
-        print(self.loop)
-        print("running Gateway")
         wsurl = f"{GATEWAY_URL}/?v=9&encoding=json"
         async with websockets.connect(wsurl) as self.websocket:
             if not resume:
-                print('Establishing connection to discord websocket.')
+                self.log.debug("Establishing a connection with the discord gateway(gateway.py:58)")
                 await self.hello()
-                print('Connection to discord websocket established.')
+                self.log.debug("Connection with the discord gateway was established(gateway.py:60)")
             else:
-                print('Reconnecting to discord websocket.')
+                self.log.debug("Trying to reconnect to the discord gateway(gateway.py:62)")
                 await self.resume()
-                print('Reconnected to discord websocket.')
+                self.log.debug("The reconnect was successful, keep calm and bomb Uganda(gateway.py:64)")
             await asyncio.gather(self._heartbeat_loop(), self._recv_loop())
 
     async def _recv_loop(self):
@@ -132,7 +120,6 @@ class Gateway:
             if event_type == "VOICE_SERVER_UPDATE":
                 self.voice_connected.set()
                 self.catch_events["VOICE_SERVER_UPDATE"] = [True, data]
-
             if event_type == 'READY':
                 self.resume_gateway_url = data["d"]["resume_gateway_url"]
                 self.session_id = data["d"]["session_id"]
@@ -174,10 +161,6 @@ class Gateway:
         self.handlers[f.__name__] = f
 
 
-async def my_coroutine(websocket):
-    await websocket.close()
-
-
 class VoiceGateway:
     def __init__(self, client, url, server_id, session_id, token):
         self.user_id = client.user_id
@@ -191,16 +174,12 @@ class VoiceGateway:
         self.heartbeat_interval = None
 
         self.connected = False
-        self.loop = self.client.loop
 
         self.ping_thread = None
 
-    def close_websocket(self):
-        asyncio.run_coroutine_threadsafe(my_coroutine(self.websocket), asyncio.get_event_loop())
-        self.connected = False
+        self.log:logging.Logger = None
 
-    def close_connection(self):
-        self.close_websocket()
+        self.is_speaking = False
 
     async def poll_event(self):
         message = await self.websocket.recv()
@@ -208,26 +187,17 @@ class VoiceGateway:
         await self.handle_message(message)
 
     async def run_connection(self, resume=False):
-        print("running Voice Gateway")
-        wsurl = f"wss://{self.url}/?v=4"
-        self.websocket = websockets.connect(wsurl)
-        self.connected = True
-        if not resume:
-            print('Establishing connection to discord voice websocket.')
-            await self.identify()
-            print('Connection to discord voice websocket established.')
-        else:
-            print('Reconnecting to discord voice websocket.')
-            await self.resume()
-            print('Reconnected to discord voice websocket.')
-
-    async def start_connection(self):
         wsurl = f"wss://{self.url}/?v=4"
         self.websocket = await websockets.connect(wsurl)
         self.connected = True
-        print('Establishing connection to discord voice websocket.')
-        await self.identify()
-        print('Connection to discord voice websocket established.')
+        if not resume:
+            self.log.debug("Establishing a connection with the discord voice gateway")
+            await self.identify()
+            self.log.debug("Connection with the discord voice gateway was established")
+        else:
+            self.log.debug("Trying to reconnect to the discord voice gateway")
+            await self.resume()
+            self.log.debug("The reconnect was successful, keep calm and bomb Uganda")
 
     async def _send(self, data):
         if self.connected:
@@ -235,7 +205,6 @@ class VoiceGateway:
             await self.websocket.send(data)
 
     async def identify(self):
-        print("identifying")
         data = {
             "op": 0,
             "d": {
@@ -245,8 +214,9 @@ class VoiceGateway:
                 "token": self.token
             }
         }
+        self.log.debug("Sending an identifying event to the discord gateway")
         await self._send(data)
-        print("identified")
+        self.log.debug("Identified")
 
     async def resume(self):
         data = {
@@ -259,15 +229,18 @@ class VoiceGateway:
         }
         await self._send(data)
 
-    def _heartbeat_loop(self):
-        print(self.loop)
+    async def _heartbeat_loop(self):
         while True and self.connected:
-            time.sleep(self.heartbeat_interval)
             data = {
                 "op": 3,
                 "d": time.time() / 1000
             }
-            asyncio.run_coroutine_threadsafe(self._send(data), loop=self.loop)
+            try:
+                await self._send(data)
+            except websockets.exceptions.ConnectionClosedError:
+                await self.run_connection(resume=True)
+                await self._send(data)
+            await asyncio.sleep(self.heartbeat_interval)
 
     async def handle_message(self, data):
         if data["op"] == 0:
@@ -279,12 +252,7 @@ class VoiceGateway:
             self.client.secret_key = data["d"]["secret_key"]
         if data["op"] == 8:
             self.heartbeat_interval = data["d"]["heartbeat_interval"] / 1000
-            await self._send({
-                "op": 3,
-                "d": time.time() / 1000
-            })
-            self.ping_thread = threading.Thread(target=self._heartbeat_loop)
-            self.ping_thread.start()
+            asyncio.create_task(self._heartbeat_loop())
 
         if data["op"] == 11:
             pass
@@ -305,11 +273,10 @@ class VoiceGateway:
 
     async def start_sending(self, filepath):
         if not self.client.playing:
-            await self.speaking(self.client.ssrc)
+            if not self.is_speaking:
+                await self.speaking(self.client.ssrc)
             self.client.source = filepath
-            thread = threading.Thread(target=self.client.send_voice)
-            thread.start()
-            print("started sending")
+            asyncio.create_task(self.client.send_voice())
 
     async def speaking(self, ssrc):
         data = {
@@ -320,5 +287,5 @@ class VoiceGateway:
                 "ssrc": ssrc
             }
         }
-        data = json.dumps(data)
-        await self.websocket.send(data)
+        await self._send(data)
+        self.is_speaking = True
