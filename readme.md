@@ -1,4 +1,4 @@
-**A package that allows to make discord bots(DON'T USE IT, IT IS MADE FOR LEARNING PURPOSES AND DOESN'T HAVE DOCUMENTATION RIGHT NOW)**
+**A package that allows to make discord bots(DON'T USE IT, IT IS MADE FOR LEARNING PURPOSES, SHADY SHENANIGANS AND ALSO DOESN'T HAVE A DOCUMENTATION RIGHT NOW)**
 
 
 Here is a simple echo bot
